@@ -2,7 +2,7 @@ from PySide6.QtWidgets import QLayout
 from PySide6.QtCore import Qt, QRect, QSize, QPoint
 
 
-class FlowLayout(QLayout):
+class FlexLayout(QLayout):
     def __init__(self, parent=None, margin=0, h_spacing=10, v_spacing=10):
         super().__init__(parent)
         self._h_spacing = h_spacing
