@@ -65,3 +65,26 @@ def get_all_sounds() -> list[dict]:
         return [dict(row) for row in rows]
     finally:
         conn.close()
+
+
+def rename_sound(old_title: str, new_title: str) -> str:
+    """Renames a sound's title. If new_title already exists, appends '_(1)'.
+
+    Returns the title that was actually applied.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT 1 FROM "Sounds" WHERE "Title" = ?', (new_title,))
+        if cursor.fetchone():
+            new_title = f"{new_title}_(1)"
+
+        cursor.execute(
+            'UPDATE "Sounds" SET "Title" = ? WHERE "Title" = ?',
+            (new_title, old_title)
+        )
+        conn.commit()
+        return new_title
+    finally:
+        conn.close()
