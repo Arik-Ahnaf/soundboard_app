@@ -1,34 +1,86 @@
 import sys
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QFileDialog
+)
 from components.ListItem import ListItem
 from components.ContextMenu import ContextMenu
+from utils.FlexLayout import FlexLayout
+from utils.ScrollArea import FlowScrollArea 
+import json
+from pathlib import Path
+from mutagen import File as MutagenFile
+import sqlite3
+from logging.handlers import RotatingFileHandler
+import logging
+from utils import database
+from utils.logger import get_logger
 
 
 class MainWindow(QMainWindow):
+
+
     def __init__(self):
+
         super().__init__()
         self.setWindowTitle("Soundboard")
         self.setGeometry(100, 100, 500, 500)
+        self.logger = get_logger("Audit")
 
-        # Create menu bar
         menubar = self.menuBar()
-        menubar.addMenu("File")
+        file_menu = menubar.addMenu("File")
         menubar.addMenu("Settings")
         menubar.addMenu("Help")
         menubar.addMenu("About")
 
-        # Create central widget and place ListItem centered
-        central_widget = QWidget()
-        central_layout = QVBoxLayout(central_widget)
-        central_layout.setContentsMargins(24, 24, 24, 24)
-        central_widget.setStyleSheet("background-color: gray;")
-        central_layout.addStretch()
-        central_layout.addWidget(
-            ListItem("Sound effect.wav", "5s"), alignment=Qt.AlignCenter
+        import_action = file_menu.addAction("Import")
+        import_action.triggered.connect(self.on_import_sounds)
+
+        container = QWidget()
+        self.flex_layout = FlexLayout(container, margin=20, h_spacing=10, v_spacing=10)
+        container.setLayout(self.flex_layout)
+
+        scroll_area = FlowScrollArea(container)
+        self.setCentralWidget(scroll_area)
+        database.initiate_db()
+        self._load_files()
+
+    
+    def _load_files(self):
+
+        for sound in database.get_all_sounds():
+            item = ListItem(title=sound["Title"], duration=sound["Duration"], path=sound["Path"])
+            self.flex_layout.addWidget(item)
+
+        self.logger.info("Initialized all sounds")
+
+
+    def on_import_sounds(self):
+
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import Sound Files",
+            "",
+            "Audio Files (*.mp3 *.wav *.ogg *.flac *.m4a *.aac);;All Files (*)"
         )
-        central_layout.addStretch()
-        self.setCentralWidget(central_widget)
+        if not files:
+            return
+
+
+        for file_path in files:
+            path = Path(file_path)
+            title = path.stem
+
+            try:
+                audio = MutagenFile(file_path)
+                duration = int(audio.info.length) if audio and audio.info else 0
+            except Exception:
+                duration = 0
+
+            database.add_sound(title, duration, str(path))
+        self.logger.info(f"Added a sound {title}")
+        self._load_files()
+
 
 
 if __name__ == "__main__":
