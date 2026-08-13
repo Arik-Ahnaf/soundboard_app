@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QFrame,
 )
+from utils import database
 
 
 class MenuButton(QPushButton):
@@ -58,10 +59,10 @@ class MenuButton(QPushButton):
 
 
 class ContextMenu(QWidget):
-    playClicked = Signal()
-    previewClicked = Signal()
-    renameClicked = Signal()
-    removeClicked = Signal()
+    play_clicked = Signal()
+    preview_clicked = Signal()
+    rename_clicked = Signal()
+    remove_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -116,10 +117,10 @@ class ContextMenu(QWidget):
         layout.addWidget(self.renameButton)
         layout.addWidget(self.removeButton)
 
-        self.playButton.clicked.connect(self.playClicked)
-        self.previewButton.clicked.connect(self.previewClicked)
-        self.renameButton.clicked.connect(self.renameClicked)
-        self.removeButton.clicked.connect(self.removeClicked)
+        self.playButton.clicked.connect(self.play_clicked)
+        self.previewButton.clicked.connect(self.preview_clicked)
+        self.renameButton.clicked.connect(self.rename_clicked)
+        self.removeButton.clicked.connect(self.remove_clicked)
 
     def show_at(self, global_pos):
         screen = QGuiApplication.screenAt(global_pos) or QGuiApplication.primaryScreen()

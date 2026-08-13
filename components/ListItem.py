@@ -1,4 +1,5 @@
 from pathlib import Path
+from utils import database
 from components.ContextMenu import ContextMenu
 from PySide6.QtCore import QEasingCurve, Qt, QPointF, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from utils import logger
 
 ICONS_DIR = Path(__file__).resolve().parent.parent / "icons"
 
@@ -106,7 +108,7 @@ class HamburgerDots(QWidget):
 class ListItem(QWidget):
     """Soundboard row: play button, title/duration, and a hamburger menu."""
 
-    def __init__(self, title: str, duration: str, parent=None):
+    def __init__(self, title: str, duration: str, path=None, parent=None):
         super().__init__(parent)
         self.setFixedSize(300, 60)
 
@@ -120,22 +122,22 @@ class ListItem(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(0)
 
-        title_label = QLabel(title)
+        self.title = QLabel(title)
         title_font = QFont()
         title_font.setPixelSize(16)
-        title_label.setFont(title_font)
-        title_label.setStyleSheet("color: black; background: transparent;")
+        self.title.setFont(title_font)
+        self.title.setStyleSheet("color: black; background: transparent;")
 
-        duration_label = QLabel(duration)
+        self.duration = QLabel(str(duration))
         duration_font = QFont()
         duration_font.setPixelSize(14)
         duration_font.setItalic(True)
-        duration_label.setFont(duration_font)
-        duration_label.setStyleSheet("color: #8a8a8a; background: transparent;")
+        self.duration.setFont(duration_font)
+        self.duration.setStyleSheet("color: #8a8a8a; background: transparent;")
 
         text_layout.addStretch()
-        text_layout.addWidget(title_label)
-        text_layout.addWidget(duration_label)
+        text_layout.addWidget(self.title)
+        text_layout.addWidget(self.duration)
         text_layout.addStretch()
 
         layout.addLayout(text_layout)
@@ -184,10 +186,10 @@ class ListItem(QWidget):
 
     def contextMenuEvent(self, event):
         self._menu = ContextMenu(self)
-        self._menu.playClicked.connect(self.on_play)
-        self._menu.previewClicked.connect(self.on_preview)
-        self._menu.renameClicked.connect(self.on_rename)
-        self._menu.removeClicked.connect(self.on_remove)
+        self._menu.play_clicked.connect(self.on_play)
+        self._menu.preview_clicked.connect(self.on_preview)
+        self._menu.rename_clicked.connect(self.on_rename)
+        self._menu.remove_clicked.connect(self.on_remove)
         self._menu.show_at(event.globalPos())
 
     def on_play(self):
