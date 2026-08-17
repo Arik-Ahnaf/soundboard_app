@@ -1,16 +1,26 @@
 """Centralized logging utility."""
+
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 APP_NAME = "Soundboard"
-LOGS_FOLDER_PATH = Path(__file__).resolve().parent.parent / "logs"
+LOG_FILENAME = "soundboard.log"
+MAX_BYTES = 2 * 1024 * 1024
+BACKUP_COUNT = 3
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _get_log_dir() -> Path:
+    """Resolve the logs/ directory in the project root."""
+    return PROJECT_ROOT / "logs"
 
 
 def _build_root_logger() -> logging.Logger:
-
-    LOGS_FOLDER_PATH.mkdir(parents=True, exist_ok=True)
+    log_dir = _get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     root = logging.getLogger(APP_NAME)
     root.setLevel(logging.DEBUG)
@@ -23,8 +33,8 @@ def _build_root_logger() -> logging.Logger:
 
     file_handler = RotatingFileHandler(
         log_dir / LOG_FILENAME,
-        maxBytes=2 * 1024 * 1024 ,
-        backupCount=3,
+        maxBytes=MAX_BYTES,
+        backupCount=BACKUP_COUNT,
         encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
@@ -50,4 +60,4 @@ def get_logger(name: str) -> logging.Logger:
 
 def get_log_path() -> Path:
     """Expose the active log file path (e.g., for a 'Show Log' menu action)."""
-    return LOGS_FOLDER_PATH / "soundboard.log"
+    return _get_log_dir() / LOG_FILENAME
