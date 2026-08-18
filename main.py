@@ -1,4 +1,5 @@
 import sys
+import typing
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog
@@ -43,17 +44,43 @@ class MainWindow(QMainWindow):
         scroll_area = FlowScrollArea(container)
         self.setCentralWidget(scroll_area)
         database.initiate_db()
-        self._load_files()
+        valid_sounds = self._validate_files()
+        self._load_files(valid_sounds)
 
-    
-    def _load_files(self):
+    def _validate_files(self):
 
-        for sound in database.get_all_sounds():
+       sounds = database.get_all_sounds() 
+       valid_sounds = []
+       invalid_sounds = []
+
+       for sound in sounds:
+
+        sound_path = sound.get("Path")
+        if sound_path and Path(sound_path).is_file(): 
+            valid_sounds.append(sound)
+        else:
+            invalid_sounds.append(sound)
+
+        if invalid_sounds:
+            self.logger.warning(f"Couldn't validate paths for {len(invalid_sounds)} sounds")
+
+        return valid_sounds
+
+    def _load_files(self, sounds: typing.Dict[str, int]):
+
+        # Clear current elements and then re-render
+        while self.flex_layout.count():
+            item = self.flex_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        for sound in sounds: 
+
             item = ListItem(title=sound["Title"], duration=sound["Duration"], path=sound["Path"])
             self.flex_layout.addWidget(item)
 
         self.logger.info("Initialized all sounds")
-
 
     def on_import_sounds(self):
 
@@ -63,9 +90,9 @@ class MainWindow(QMainWindow):
             "",
             "Audio Files (*.mp3 *.wav *.ogg *.flac *.m4a *.aac);;All Files (*)"
         )
+
         if not files:
             return
-
 
         for file_path in files:
             path = Path(file_path)
@@ -78,9 +105,9 @@ class MainWindow(QMainWindow):
                 duration = 0
 
             database.add_sound(title, duration, str(path))
-        self.logger.info(f"Added a sound {title}")
-        self._load_files()
 
+        self.logger.info(f"Added {len(files)} sounds")
+        self._load_files(database.get_all_sounds())
 
 
 if __name__ == "__main__":
