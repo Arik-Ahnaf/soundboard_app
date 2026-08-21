@@ -41,32 +41,34 @@ class MainWindow(QMainWindow):
         self.flex_layout = FlexLayout(container, margin=20, h_spacing=10, v_spacing=10)
         container.setLayout(self.flex_layout)
 
-        scroll_area = FlowScrollArea(container)
-        self.setCentralWidget(scroll_area)
+        self.scroll_area = FlowScrollArea(container)
+        self.setCentralWidget(self.scroll_area)
         database.initiate_db()
         valid_sounds = self._validate_files()
         self._load_files(valid_sounds)
 
     def _validate_files(self):
 
-       sounds = database.get_all_sounds() 
-       valid_sounds = []
-       invalid_sounds = []
+        sounds = database.get_all_sounds()
+        valid_sounds = []
+        invalid_sounds = []
 
-       for sound in sounds:
-
-        sound_path = sound.get("Path")
-        if sound_path and Path(sound_path).is_file(): 
-            valid_sounds.append(sound)
-        else:
-            invalid_sounds.append(sound)
+        for sound in sounds:
+            sound_path = sound.get("Path")
+            if sound_path and Path(sound_path).is_file():
+                valid_sounds.append(sound)
+            else:
+                invalid_sounds.append(sound)
 
         if invalid_sounds:
             self.logger.warning(f"Couldn't validate paths for {len(invalid_sounds)} sounds")
 
         return valid_sounds
 
-    def _load_files(self, sounds: typing.Dict[str, int]):
+    def _load_files(self, sounds: list[dict[str, object]]):
+
+        if not sounds:
+            return
 
         # Clear current elements and then re-render
         while self.flex_layout.count():
@@ -80,6 +82,9 @@ class MainWindow(QMainWindow):
             item = ListItem(title=sound["Title"], duration=sound["Duration"], path=sound["Path"])
             self.flex_layout.addWidget(item)
 
+        # Loading may occur before Qt processes the layout-request event, so
+        # update the scrollable height immediately as well.
+        self.scroll_area.sync_content_height()
         self.logger.info("Initialized all sounds")
 
     def on_import_sounds(self):
@@ -107,7 +112,7 @@ class MainWindow(QMainWindow):
             database.add_sound(title, duration, str(path))
 
         self.logger.info(f"Added {len(files)} sounds")
-        self._load_files(database.get_all_sounds())
+        self._load_files(self._validate_files())
 
 
 if __name__ == "__main__":
