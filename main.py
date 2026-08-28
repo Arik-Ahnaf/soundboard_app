@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog
 )
-from components.ListItem import ListItem
+from components.SoundItem import SoundItem
 from components.ContextMenu import ContextMenu
 from utils.FlexLayout import FlexLayout
 from utils.ScrollArea import FlowScrollArea 
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
 
         for sound in sounds: 
 
-            item = ListItem(title=sound["Title"], duration=sound["Duration"], path=sound["Path"])
+            item = SoundItem(title=sound["Title"], duration=sound["Duration"], path=sound["Path"])
             self.flex_layout.addWidget(item)
 
         # Loading may occur before Qt processes the layout-request event, so
