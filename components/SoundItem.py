@@ -1,8 +1,11 @@
+import json
 from pathlib import Path
+from weakref import ReferenceType, ref
+
 from utils import database
 from components.ContextMenu import ContextMenu
 from PySide6.QtCore import QEasingCurve, Qt, QPointF, QUrl, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -15,6 +18,20 @@ from PySide6.QtWidgets import (
 from utils import logger
 
 ICONS_DIR = Path(__file__).resolve().parent.parent / "icons"
+THEME_PATH = Path(__file__).resolve().parent.parent / "themes" / "dark.json"
+
+with THEME_PATH.open(encoding="utf-8") as theme_file:
+    DARK_COLORS = json.load(theme_file)["colors"]
+
+
+def blend_colors(start: QColor, end: QColor, progress: float) -> QColor:
+    """Return the color at ``progress`` between two theme colors."""
+    return QColor.fromRgbF(
+        start.redF() + (end.redF() - start.redF()) * progress,
+        start.greenF() + (end.greenF() - start.greenF()) * progress,
+        start.blueF() + (end.blueF() - start.blueF()) * progress,
+        start.alphaF() + (end.alphaF() - start.alphaF()) * progress,
+    )
 
 
 class CircleIcon(QWidget):
@@ -71,9 +88,14 @@ class CircleIcon(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
 
-        shade = int(255 * (1.0 - self._hover_progress))
-        circle_color = QColor(shade, shade, shade)
-        icon_color = QColor(255 - shade, 255 - shade, 255 - shade)
+        play_color = QColor(DARK_COLORS["play_btn"])
+        background_color = QColor(DARK_COLORS["background"])
+        circle_color = blend_colors(
+            play_color, background_color, self._hover_progress
+        )
+        icon_color = blend_colors(
+            background_color, play_color, self._hover_progress
+        )
 
         painter.setBrush(circle_color)
         painter.drawEllipse(0, 0, self._diameter, self._diameter)
@@ -97,7 +119,7 @@ class HamburgerDots(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("black"))
+        painter.setBrush(QColor(DARK_COLORS["neutral"]))
 
         d = self._dot_size
         slot = self.height() / self._count
@@ -108,6 +130,8 @@ class HamburgerDots(QWidget):
 
 class SoundItem(QWidget):
     """Soundboard row: play button, title/duration, and a hamburger menu."""
+
+    _active_preview_player_ref: ReferenceType[QMediaPlayer] | None = None
 
     def __init__(
         self,
@@ -136,14 +160,18 @@ class SoundItem(QWidget):
         title_font = QFont()
         title_font.setPixelSize(16)
         self.title.setFont(title_font)
-        self.title.setStyleSheet("color: black; background: transparent;")
+        self.title.setStyleSheet(
+            f"color: {DARK_COLORS['foreground']}; background: transparent;"
+        )
 
         self.duration = QLabel(str(duration))
         duration_font = QFont()
         duration_font.setPixelSize(14)
         duration_font.setItalic(True)
         self.duration.setFont(duration_font)
-        self.duration.setStyleSheet("color: #8a8a8a; background: transparent;")
+        self.duration.setStyleSheet(
+            f"color: {DARK_COLORS['foreground']}; background: transparent;"
+        )
 
         text_layout.addStretch()
         text_layout.addWidget(self.title)
@@ -190,9 +218,9 @@ class SoundItem(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("white"))
-        painter.drawRoundedRect(self.rect(), 16, 16)
+        painter.setPen(QPen(QColor(DARK_COLORS["foreground"]), 1))
+        painter.setBrush(QColor(DARK_COLORS["background"]))
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 16, 16)
 
     def contextMenuEvent(self, event):
         self._menu = ContextMenu(self)
@@ -224,11 +252,21 @@ class SoundItem(QWidget):
             self._preview_player.setAudioOutput(self._preview_output)
             self._preview_player.errorOccurred.connect(self._on_preview_error)
 
+        active_player_ref = SoundItem._active_preview_player_ref
+        active_player = active_player_ref() if active_player_ref is not None else None
+        if active_player is not None and active_player is not self._preview_player:
+            try:
+                active_player.stop()
+            except RuntimeError:
+                # Its owning row may already have been deleted by Qt.
+                pass
+
         # Restart the sound when Preview is clicked again while it is playing.
         self._preview_player.stop()
         self._preview_output.setDevice(default_device)
         self._preview_player.setSource(QUrl.fromLocalFile(str(sound_path)))
         self._preview_player.play()
+        SoundItem._active_preview_player_ref = ref(self._preview_player)
 
     def _get_preview_path(self) -> Path | None:
         """Return this row's current, valid sound path from the database."""
