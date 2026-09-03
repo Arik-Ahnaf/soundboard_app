@@ -1,0 +1,9 @@
+{
+    "name": "Dark",
+    "colors": {
+        "foreground": "#CCCCCC",
+        "background": "#333333",
+        "play_btn": "#CCCCCC",
+        "neutral": "#333333"
+    }
+}

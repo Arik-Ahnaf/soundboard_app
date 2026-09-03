@@ -1,0 +1,9 @@
+{
+    "name": "Dracula",
+    "colors": {
+        "foreground": "#F8F8F2",
+        "background": "#282A36",
+        "play_btn": "#F1FA8C",
+        "neutral": "#44475A"
+    }
+}
