@@ -4,8 +4,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFileDialog
 )
-from components.SoundItem import SoundItem
+from components.SoundItem import DARK_COLORS, SoundItem
 from components.ContextMenu import ContextMenu
+from pages.SettingsPage import SettingsPage
 from utils.FlexLayout import FlexLayout
 from utils.ScrollArea import FlowScrollArea 
 import json
@@ -26,26 +27,57 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Soundboard")
         self.setGeometry(100, 100, 500, 500)
+        self.setStyleSheet(
+            f"QMainWindow {{ background: {DARK_COLORS['background']}; }}"
+        )
         self.logger = get_logger("Audit")
 
         menubar = self.menuBar()
         file_menu = menubar.addMenu("File")
-        menubar.addMenu("Settings")
+        self.settings_action = menubar.addAction("Settings")
         menubar.addMenu("Help")
         menubar.addMenu("About")
 
         import_action = file_menu.addAction("Import")
         import_action.triggered.connect(self.on_import_sounds)
+        self.settings_action.triggered.connect(self.on_open_settings)
+        self.settings_dialog = None
 
         container = QWidget()
+        container.setObjectName("soundContainer")
+        container.setStyleSheet(
+            f"#soundContainer {{ background: {DARK_COLORS['background']}; }}"
+        )
         self.flex_layout = FlexLayout(container, margin=20, h_spacing=10, v_spacing=10)
         container.setLayout(self.flex_layout)
 
         self.scroll_area = FlowScrollArea(container)
+        self.scroll_area.setStyleSheet(
+            f"QScrollArea {{ background: {DARK_COLORS['background']}; }}"
+        )
+        self.scroll_area.viewport().setStyleSheet(
+            f"background: {DARK_COLORS['background']};"
+        )
         self.setCentralWidget(self.scroll_area)
         database.initiate_db()
         valid_sounds = self._validate_files()
         self._load_files(valid_sounds)
+
+    def on_open_settings(self):
+        if self.settings_dialog is not None:
+            self.settings_dialog.raise_()
+            self.settings_dialog.activateWindow()
+            return
+
+        self.settings_dialog = SettingsPage(self)
+        self.settings_dialog.finished.connect(self._on_settings_closed)
+        self.settings_dialog.open()
+
+    def _on_settings_closed(self):
+        dialog = self.settings_dialog
+        self.settings_dialog = None
+        if dialog is not None:
+            dialog.deleteLater()
 
     def _validate_files(self):
 
