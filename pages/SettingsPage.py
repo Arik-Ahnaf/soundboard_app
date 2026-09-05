@@ -8,6 +8,9 @@ from PySide6.QtWidgets import QComboBox, QDialog, QLabel, QPushButton, QSlider
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SETTINGS_PATH = PROJECT_ROOT / "settings.json"
 DEFAULT_THEMES_DIR = PROJECT_ROOT / "themes"
+REQUIRED_THEME_COLORS = frozenset(
+    {"foreground", "background", "play_btn", "neutral"}
+)
 
 
 class SettingsPage(QDialog):
@@ -82,6 +85,8 @@ class SettingsPage(QDialog):
         return settings if isinstance(settings, dict) else {}
 
     def _populate_themes(self):
+        self.theme_combo.clear()
+
         if self._themes_dir.is_dir():
             for theme_path in sorted(self._themes_dir.glob("*.json")):
                 try:
@@ -90,11 +95,33 @@ class SettingsPage(QDialog):
                 except (json.JSONDecodeError, OSError):
                     continue
 
-                name = theme.get("name", theme_path.stem.title())
-                self.theme_combo.addItem(str(name), theme_path.stem)
+                if self._is_valid_theme(theme):
+                    self.theme_combo.addItem(theme["name"], theme_path.stem)
 
-        if self.theme_combo.count() == 0:
-            self.theme_combo.addItem("Default", "default")
+        self.theme_combo.setEnabled(self.theme_combo.count() > 0)
+
+    @staticmethod
+    def _is_valid_theme(theme) -> bool:
+        if not isinstance(theme, dict):
+            return False
+
+        name = theme.get("name")
+        colors = theme.get("colors")
+        if not isinstance(name, str) or not name.strip():
+            return False
+        if not isinstance(colors, dict) or not REQUIRED_THEME_COLORS <= colors.keys():
+            return False
+
+        for color_name in REQUIRED_THEME_COLORS:
+            color = colors[color_name]
+            if not isinstance(color, str) or len(color) != 7 or color[0] != "#":
+                return False
+            try:
+                int(color[1:], 16)
+            except ValueError:
+                return False
+
+        return True
 
     def _load_values(self):
         settings = self._read_settings()
@@ -112,12 +139,10 @@ class SettingsPage(QDialog):
 
     def save_settings(self):
         settings = self._read_settings()
-        settings.update(
-            {
-                "theme": self.theme_combo.currentData(),
-                "max_volume": self.volume_slider.value(),
-            }
-        )
+        selected_theme = self.theme_combo.currentData()
+        if selected_theme is not None:
+            settings["theme"] = selected_theme
+        settings["max_volume"] = self.volume_slider.value()
 
         self._settings_path.parent.mkdir(parents=True, exist_ok=True)
         with self._settings_path.open("w", encoding="utf-8") as settings_file:
