@@ -1,21 +1,22 @@
 import json
 from pathlib import Path
-from weakref import ReferenceType, ref
 
 from utils import database
 from components.ContextMenu import ContextMenu
-from PySide6.QtCore import QEasingCurve, Qt, QPointF, QUrl, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, Qt, QPointF, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
-from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
 from utils import logger
+from utils.playback import get_playback_controller
 
 ICONS_DIR = Path(__file__).resolve().parent.parent / "icons"
 THEME_PATH = Path(__file__).resolve().parent.parent / "themes" / "dark.json"
@@ -34,15 +35,19 @@ def blend_colors(start: QColor, end: QColor, progress: float) -> QColor:
     )
 
 
-class CircleIcon(QWidget):
+class CircleIcon(QAbstractButton):
 
     def __init__(self, diameter: int = 40, parent=None):
         super().__init__(parent)
         self._diameter = diameter
         self._hover_progress = 0.0
+        self._playing = False
         self.setFixedSize(diameter, diameter)
         self.setAttribute(Qt.WA_Hover)
         self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAccessibleName("Play sound")
 
         self._icon_renderer = QSvgRenderer(str(ICONS_DIR / "play_button.svg"), self)
 
@@ -50,6 +55,18 @@ class CircleIcon(QWidget):
         self._hover_anim.setDuration(200)
         self._hover_anim.setEasingCurve(QEasingCurve.InOutQuad)
         self._hover_anim.valueChanged.connect(self._set_hover_progress)
+
+    def set_playing(self, playing: bool):
+        self._playing = playing
+        self.update()
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if not event.isAutoRepeat():
+                self.click()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def _set_hover_progress(self, value):
         self._hover_progress = value
@@ -102,8 +119,16 @@ class CircleIcon(QWidget):
 
         icon_size = int(self._diameter * 0.4)
         offset = (self._diameter - icon_size) / 2
-        icon_pixmap = self._tinted_icon(icon_size, icon_color)
-        painter.drawPixmap(QPointF(offset + 2, offset), icon_pixmap)
+        if self._playing:
+            painter.setBrush(icon_color)
+            painter.drawRect(int(offset), int(offset), icon_size, icon_size)
+        else:
+            icon_pixmap = self._tinted_icon(icon_size, icon_color)
+            painter.drawPixmap(QPointF(offset + 2, offset), icon_pixmap)
+        if self.hasFocus():
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(DARK_COLORS["foreground"]), 1, Qt.DotLine))
+            painter.drawEllipse(3, 3, self._diameter - 6, self._diameter - 6)
 
 
 class HamburgerDots(QWidget):
@@ -131,8 +156,6 @@ class HamburgerDots(QWidget):
 class SoundItem(QWidget):
     """Soundboard row: play button, title/duration, and a hamburger menu."""
 
-    _active_preview_player_ref: ReferenceType[QMediaPlayer] | None = None
-
     def __init__(
         self,
         title: str,
@@ -143,14 +166,23 @@ class SoundItem(QWidget):
         super().__init__(parent)
         self.setFixedSize(300, 60)
         self._sound_path = Path(path).expanduser() if path else None
-        self._preview_player = None
-        self._preview_output = None
+        self._playback = get_playback_controller()
+        self._playback_state = "idle"
+        self._playback.state_changed.connect(self._on_playback_state)
+        self._playback.failed.connect(self._on_playback_error)
+        self.destroyed.connect(
+            lambda _=None, owner=id(self), controller=self._playback: controller.stop(owner)
+        )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 0, 20, 0)
         layout.setSpacing(10)
 
-        layout.addWidget(CircleIcon(40))
+        self.play_button = CircleIcon(40)
+        self.play_button.clicked.connect(self._toggle_play)
+        self.play_button.setAccessibleName(f"Play {title}")
+        self.play_button.setToolTip("Play through speakers and Soundboard Mic")
+        layout.addWidget(self.play_button)
 
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
@@ -231,44 +263,53 @@ class SoundItem(QWidget):
         self._menu.show_at(event.globalPos())
 
     def on_play(self):
-        pass
+        self._start_playback(preview=False)
 
     def on_preview(self):
-        sound_path = self._get_preview_path()
+        self._start_playback(preview=True)
+
+    def _toggle_play(self):
+        if self._playback_state != "idle":
+            self._playback.stop(id(self))
+        else:
+            self.on_play()
+
+    def _start_playback(self, *, preview: bool):
+        if getattr(self, "_menu", None) is not None:
+            self._menu.close()
+        sound_path = self._get_sound_path()
         if sound_path is None:
+            self._on_playback_error(id(self), "The sound file could not be found. Import it again.")
             return
+        self._playback.play(sound_path, id(self), preview=preview)
 
-        default_device = QMediaDevices.defaultAudioOutput()
-        if default_device.isNull():
-            logger.get_logger("Audit").warning(
-                "Couldn't preview %s because no default audio output is available",
-                self.title.text(),
-            )
+    def _on_playback_state(self, owner, state: str):
+        if owner != id(self):
             return
+        self._playback_state = state
+        active = state != "idle"
+        self.play_button.set_playing(active)
+        self.play_button.setAccessibleName(
+            f"{'Stop' if active else 'Play'} {self.title.text()}"
+        )
+        self.play_button.setToolTip(
+            "Preparing audio — click to cancel" if state == "preparing" else
+            "Stop playback" if active else
+            "Play through speakers and Soundboard Mic"
+        )
 
-        if self._preview_player is None:
-            self._preview_output = QAudioOutput(self)
-            self._preview_player = QMediaPlayer(self)
-            self._preview_player.setAudioOutput(self._preview_output)
-            self._preview_player.errorOccurred.connect(self._on_preview_error)
+    def _on_playback_error(self, owner, message: str):
+        if owner != id(self):
+            return
+        logger.get_logger("Audit").error("Couldn't play %s: %s", self.title.text(), message)
+        # Nonmodal feedback keeps the stop control and the rest of the board usable.
+        self._error_dialog = QMessageBox(QMessageBox.Warning, "Soundboard playback", message,
+                                        QMessageBox.Ok, self)
+        self._error_dialog.setAttribute(Qt.WA_DeleteOnClose)
+        self._error_dialog.setWindowModality(Qt.NonModal)
+        self._error_dialog.show()
 
-        active_player_ref = SoundItem._active_preview_player_ref
-        active_player = active_player_ref() if active_player_ref is not None else None
-        if active_player is not None and active_player is not self._preview_player:
-            try:
-                active_player.stop()
-            except RuntimeError:
-                # Its owning row may already have been deleted by Qt.
-                pass
-
-        # Restart the sound when Preview is clicked again while it is playing.
-        self._preview_player.stop()
-        self._preview_output.setDevice(default_device)
-        self._preview_player.setSource(QUrl.fromLocalFile(str(sound_path)))
-        self._preview_player.play()
-        SoundItem._active_preview_player_ref = ref(self._preview_player)
-
-    def _get_preview_path(self) -> Path | None:
+    def _get_sound_path(self) -> Path | None:
         """Return this row's current, valid sound path from the database."""
         title = self.title.text()
 
@@ -276,7 +317,7 @@ class SoundItem(QWidget):
             sounds = database.get_all_sounds()
         except Exception:
             logger.get_logger("Audit").exception(
-                "Couldn't fetch the path for previewing %s", title
+                "Couldn't fetch the path for playing %s", title
             )
             return None
 
@@ -302,19 +343,15 @@ class SoundItem(QWidget):
                 return sound_path.resolve()
 
         logger.get_logger("Audit").warning(
-            "Couldn't find a valid path for previewing %s", title
+            "Couldn't find a valid path for playing %s", title
         )
         return None
-
-    def _on_preview_error(self, error, error_string):
-        logger.get_logger("Audit").error(
-            "Couldn't preview %s: %s", self.title.text(), error_string or error
-        )
 
     def on_rename(self):
         pass
 
     def on_remove(self):
+        self._playback.stop(id(self))
         database.remove_sound(self.title.text())
         logger.get_logger("Audit").info(f"Removed {self.title.text()}")
         self.deleteLater()

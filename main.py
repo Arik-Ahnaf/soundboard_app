@@ -17,6 +17,7 @@ from logging.handlers import RotatingFileHandler
 import logging
 from utils import database
 from utils.logger import get_logger
+from utils.playback import get_playback_controller
 
 
 class MainWindow(QMainWindow):
@@ -70,6 +71,9 @@ class MainWindow(QMainWindow):
             return
 
         self.settings_dialog = SettingsPage(self)
+        self.settings_dialog.settings_saved.connect(
+            lambda _: get_playback_controller().stop()
+        )
         self.settings_dialog.finished.connect(self._on_settings_closed)
         self.settings_dialog.open()
 
