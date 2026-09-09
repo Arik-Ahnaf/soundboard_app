@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 
 from utils import database
 from components.ContextMenu import ContextMenu
@@ -20,6 +21,10 @@ from utils.playback import get_playback_controller
 
 ICONS_DIR = Path(__file__).resolve().parent.parent / "icons"
 THEME_PATH = Path(__file__).resolve().parent.parent / "themes" / "dark.json"
+PLAY_TOOLTIP = (
+    "Play through speakers and VB-CABLE (select CABLE Output in your voice app)"
+    if sys.platform == "win32" else "Play through speakers and Soundboard Mic"
+)
 
 with THEME_PATH.open(encoding="utf-8") as theme_file:
     DARK_COLORS = json.load(theme_file)["colors"]
@@ -181,7 +186,7 @@ class SoundItem(QWidget):
         self.play_button = CircleIcon(40)
         self.play_button.clicked.connect(self._toggle_play)
         self.play_button.setAccessibleName(f"Play {title}")
-        self.play_button.setToolTip("Play through speakers and Soundboard Mic")
+        self.play_button.setToolTip(PLAY_TOOLTIP)
         layout.addWidget(self.play_button)
 
         text_layout = QVBoxLayout()
@@ -295,7 +300,7 @@ class SoundItem(QWidget):
         self.play_button.setToolTip(
             "Preparing audio — click to cancel" if state == "preparing" else
             "Stop playback" if active else
-            "Play through speakers and Soundboard Mic"
+            PLAY_TOOLTIP
         )
 
     def _on_playback_error(self, owner, message: str):

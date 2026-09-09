@@ -15,6 +15,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 from uuid import uuid4
@@ -39,12 +40,24 @@ class AudioCancelled(AudioProcessingError):
 
 def find_ffmpeg() -> str:
     executable = shutil.which("ffmpeg")
-    if executable is None:
-        raise AudioProcessingError(
-            "FFmpeg is required to check audio levels. Install the Arch Linux "
-            "'ffmpeg' package, then try again."
-        )
-    return executable
+    if executable is not None:
+        return executable
+    if sys.platform == "win32":
+        # Windows wheels include an executable, so playback does not require a
+        # separate FFmpeg installation or a change to the user's PATH.
+        try:
+            from imageio_ffmpeg import get_ffmpeg_exe
+
+            return get_ffmpeg_exe()
+        except (ImportError, OSError, RuntimeError) as error:
+            raise AudioProcessingError(
+                "FFmpeg is required to check audio levels. Run 'uv sync' to "
+                "install the bundled Windows FFmpeg, or install FFmpeg on PATH."
+            ) from error
+    raise AudioProcessingError(
+        "FFmpeg is required to check audio levels. Install the Arch Linux "
+        "'ffmpeg' package, then try again."
+    )
 
 
 def _check_cancelled(cancel_event: threading.Event) -> None:
@@ -64,6 +77,7 @@ def _run_ffmpeg(
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=diagnostics,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
         except OSError as error:
             raise AudioProcessingError(f"Could not start FFmpeg: {error}") from error

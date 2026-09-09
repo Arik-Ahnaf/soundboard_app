@@ -53,7 +53,11 @@ class PlaybackWorker(Thread):
         self.requests: Queue[PlaybackRequest | None] = Queue()
 
     def run(self):
-        routing = AudioRouting()
+        if sys.platform == "win32":
+            from utils.windows_audio import WindowsAudio
+            routing = WindowsAudio()
+        else:
+            routing = AudioRouting()
         try:
             while (request := self.requests.get()) is not None:
                 if request.cancel.is_set():
@@ -74,18 +78,26 @@ class PlaybackWorker(Thread):
             except Exception:
                 LOG.exception("Couldn't clean up the virtual audio devices")
 
-    def _play(self, request: PlaybackRequest, routing: AudioRouting):
-        if sys.platform != "linux":
-            raise RuntimeError("Soundboard playback currently supports Linux with PipeWire.")
-        paplay = shutil.which("paplay")
-        if paplay is None:
-            raise RuntimeError("Install libpulse (paplay) to enable playback on Arch Linux.")
+    def _play(self, request: PlaybackRequest, routing):
+        if sys.platform not in ("linux", "win32"):
+            raise RuntimeError("Soundboard playback supports Windows with VB-CABLE and Linux with PipeWire.")
+        if sys.platform == "linux":
+            paplay = shutil.which("paplay")
+            if paplay is None:
+                raise RuntimeError("Install libpulse (paplay) to enable playback on Arch Linux.")
 
         self.signals.state.emit(request.number, "preparing")
         with TemporaryDirectory(prefix="soundboard-audio-") as directory:
             prepared = prepare_audio(request.path, Path(directory), request.cancel)
             if request.cancel.is_set():
                 raise AudioCancelled()
+            if sys.platform == "win32":
+                routing.play(
+                    prepared, volume=request.volume, preview=request.preview,
+                    cancel=request.cancel,
+                    on_started=lambda: self.signals.state.emit(request.number, "playing"),
+                )
+                return
             sink = routing.speaker() if request.preview else routing.ensure()
             if request.cancel.is_set():
                 raise AudioCancelled()
